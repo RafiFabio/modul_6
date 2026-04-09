@@ -5,10 +5,7 @@ import 'prodi.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   await Hive.initFlutter();
-
-  await Hive.deleteBoxFromDisk('mahasiswaBox');
 
   Hive.registerAdapter(MahasiswaAdapter());
   Hive.registerAdapter(ProdiAdapter());
@@ -26,32 +23,41 @@ void main() async {
     ]);
   }
 
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(home: MahasiswaPage());
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: HomePage(),
+    );
   }
 }
 
-class MahasiswaPage extends StatefulWidget {
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
   @override
-  State<MahasiswaPage> createState() => _MahasiswaPageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _MahasiswaPageState extends State<MahasiswaPage> {
-  final Box box = Hive.box('mahasiswaBox');
-  final Box prodiBox = Hive.box('prodiBox');
+class _HomePageState extends State<HomePage> {
+  final Box<Mahasiswa> box = Hive.box<Mahasiswa>('mahasiswaBox');
+  final Box<Prodi> prodiBox = Hive.box<Prodi>('prodiBox');
 
-  final TextEditingController namaController = TextEditingController();
-  final TextEditingController nimController = TextEditingController();
+  final namaController = TextEditingController();
+  final nimController = TextEditingController();
 
   int? selectedProdiId;
   int? editIndex;
 
   void saveData() {
+    if (selectedProdiId == null) return;
+
     final mahasiswa = Mahasiswa(
       nama: namaController.text,
       nim: nimController.text,
@@ -80,6 +86,36 @@ class _MahasiswaPageState extends State<MahasiswaPage> {
     });
   }
 
+  void deleteData(int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Hapus Data"),
+        content: const Text("Yakin ingin menghapus data ini?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Batal"),
+          ),
+          TextButton(
+            onPressed: () {
+              // 🔥 FIX UTAMA
+              if (editIndex == index) {
+                clearForm(); // reset form jika data yg diedit dihapus
+              } else if (editIndex != null && index < editIndex!) {
+                editIndex = editIndex! - 1; // sesuaikan index
+              }
+
+              box.deleteAt(index);
+              Navigator.pop(context);
+            },
+            child: const Text("Hapus"),
+          ),
+        ],
+      ),
+    );
+  }
+
   void clearForm() {
     namaController.clear();
     nimController.clear();
@@ -93,23 +129,24 @@ class _MahasiswaPageState extends State<MahasiswaPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Data Mahasiswa")),
+      appBar: AppBar(title: const Text("Mahasiswa")),
       body: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           children: [
             TextField(
               controller: namaController,
-              decoration: InputDecoration(labelText: "Nama"),
+              decoration: const InputDecoration(labelText: "Nama"),
             ),
             TextField(
               controller: nimController,
-              decoration: InputDecoration(labelText: "NIM"),
+              decoration: const InputDecoration(labelText: "NIM"),
             ),
+            const SizedBox(height: 10),
+
             DropdownButtonFormField<int>(
-              key: ValueKey(selectedProdiId),
-              initialValue: selectedProdiId,
-              hint: Text("Pilih Prodi"),
+              value: selectedProdiId,
+              hint: const Text("Pilih Prodi"),
               items: List.generate(prodiBox.length, (index) {
                 final prodi = prodiBox.getAt(index);
                 return DropdownMenuItem(
@@ -123,22 +160,47 @@ class _MahasiswaPageState extends State<MahasiswaPage> {
                 });
               },
             ),
-            SizedBox(height: 10),
-            ElevatedButton(onPressed: saveData, child: Text("Simpan")),
-            SizedBox(height: 20),
-            Expanded(
-              child: ListView.builder(
-                itemCount: box.length,
-                itemBuilder: (context, index) {
-                  final data = box.getAt(index)!;
-                  final prodi = prodiBox.getAt(data.prodiId);
 
-                  return ListTile(
-                    title: Text(data.nama),
-                    subtitle: Text(
-                      "NIM: ${data.nim} | ${prodi?.namaProdi ?? '-'}",
-                    ),
-                    onTap: () => editData(index),
+            const SizedBox(height: 10),
+
+            ElevatedButton(
+              onPressed: saveData,
+              child: Text(editIndex == null ? "Simpan" : "Update"),
+            ),
+
+            const SizedBox(height: 10),
+
+            Expanded(
+              child: ValueListenableBuilder(
+                valueListenable: box.listenable(),
+                builder: (context, Box<Mahasiswa> box, _) {
+                  return ListView.builder(
+                    itemCount: box.length,
+                    itemBuilder: (context, index) {
+                      final data = box.getAt(index)!;
+                      final prodi = prodiBox.getAt(data.prodiId);
+
+                      return ListTile(
+                        title: Text(data.nama),
+                        subtitle: Text(
+                          "NIM: ${data.nim} | ${prodi?.namaProdi ?? '-'}",
+                        ),
+                        onTap: () => editData(index),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue),
+                              onPressed: () => editData(index),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => deleteData(index),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   );
                 },
               ),
